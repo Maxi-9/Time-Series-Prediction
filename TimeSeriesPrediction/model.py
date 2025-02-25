@@ -4,6 +4,7 @@ import importlib.util
 import os
 import sys
 import time
+import warnings
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Tuple
@@ -20,6 +21,7 @@ from TimeSeriesPrediction.features import Features
 from TimeSeriesPrediction.metrics import Metrics
 from TimeSeriesPrediction.normalizer import Normalizer
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Exceptions:
 class ModelNotTrainedError(Exception):
@@ -44,10 +46,8 @@ class Commons(ABC):
     Not to be initiated directly!
     """
 
-    # Add mappings here to use in CLI
-    model_mapping = {
-        # Add other mappings here
-    }
+
+    model_mapping = {}
 
     def __init__(self, model, model_type: str, features: Features, lookback: int = 30):
         # Sets the version of scheme(stored values)
@@ -293,5 +293,5 @@ def import_children(directory="Types"):
     sys.path.remove(models_dir)  # Remove the directory from sys.path after importing
 
 
-# Assuming your child classes are in a directory named 'children'
+# Assuming the child classes are in a directory named 'children'
 import_children()

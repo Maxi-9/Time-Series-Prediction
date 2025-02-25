@@ -24,6 +24,7 @@ def main(filename, debug, split, overwrite, mtype, stocks, save, seed):
     if model is None:
         model = Commons.model_mapping[mtype]()
 
+    stocks = model.features.flatten_stocklist(stocks)
     model.set_seed(seed)
     test_sets = []
     for stockName in stocks:

@@ -7,9 +7,15 @@ class Parse_Args:
     def __init__(self):
         pass
 
-    filename = click.argument("filename", nargs=1, type=click.Path(exists=False))
+    filename = click.argument(
+        "filename",
+        nargs=1,
+        type=click.Path(exists=False),
+    )
     modeltype = click.argument(
-        "mtype", nargs=1, type=click.Choice(Commons.model_mapping.keys())
+        "mtype",
+        nargs=1,
+        type=click.Choice(Commons.model_mapping.keys()),
     )
 
     save_xlsx = click.option(
@@ -17,7 +23,7 @@ class Parse_Args:
         "--save",
         type=str,
         default=None,
-        help="Saves test table to specified file as xlsx file, used for debugging and testing.",
+        help="Debug: Saves test table to specified file as xlsx file, used for debugging and testing.",
     )
     debug = click.option(
         "-d",
@@ -38,15 +44,22 @@ class Parse_Args:
         "--cache",
         type=str,
         default="cache",
-        help="Creates a cache file for each stock in provided directory, overwrites the rows that already exist."
+        help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
+    )
+
+    load = click.option(
+        "-l",
+        "--load",
+        type=str,
+        default="cache",
+        help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
     )
 
     log = click.option(
-        "-l",
         "--log",
         type=str,
         default="log",
-        help="Creates a log file for each stock, designed as a way to measure the performance of the models in a with real world scenario."
+        help="Creates a log file for each stock, designed as a way to measure the performance of the models in a real world scenario. Used by validate.py for full analysis.",
     )
 
     @staticmethod
@@ -61,14 +74,21 @@ class Parse_Args:
             type=str,
             default=default,
             required=req,
-            help="""\b
-        Stocks should be in on of the following forms:
-        - stock
-        - stock.market
-        To specify data period, start/stop date, or just a start date(to current date), use:
-        - stock,period     | With period in form of: 1d, 1mo, 1y ytd, max
-        - stock:start,stop | Start and stop being date in form: MM-DD-YYYY
-        - stock:start      | Start being date in form: MM-DD-YYYY\n
+            help="""\bSelect stocks for use. Also see --cache and --load options for saving and loading stock data.\n
+    Stock options:
+        - stock stock               Example: `AAPL`, `GOOGL`
+        - stock.market              Example: `AAPL.NASDAQ`, `GOOGL.NYSE`
+        - stock.market:period       Example: `AAPL:1mo`, `GOOGL.NYSE:ytd`
+        - stock.market:start.stop   Example: `AAPL:01-01-2020.12-31-2023`
+        - stock.market:start        Example: `AAPL:01-01-2020`
+        - File Path to CSV          Example: `/path/to/stock_list.csv`
+        
+    Period options:
+        - `1d` (1 day)
+        - `1mo` (1 month)
+        - `1y` (1 year)
+        - `ytd` (year-to-date)
+        - `max` (maximum available data)
         """,
         )
 
@@ -80,6 +100,7 @@ class Parse_Args:
         help="""\b
     Random seed if not specified. Set fixed seed for supported models, setting seed will make the model deterministic but the input data from yFinance isn't deterministic.\n""",
     )  # Warning: May not work for all models, if you create your own model, you customize it to set seed
+    # Due to a problem with Yahoo this is not guaranteed to work https://github.com/ranaroussi/yfinance/issues/626
 
     split = click.option(
         "-t",
