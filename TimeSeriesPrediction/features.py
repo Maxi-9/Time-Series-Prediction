@@ -302,19 +302,35 @@ class Features(metaclass=FeatureMeta):
         cls.feature_list[name] = feature
 
     @staticmethod
+    def flatten_stocklist(stocks: list[str]) -> list[str]:
+        flattened_list = []
+
+        for stock in stocks:
+            if ".csv" in stock:
+                with open(stock, "r") as f:
+                    for line in f:
+                        for item in line.split(","):
+                            flattened_list.append(item.strip())
+            else:
+                flattened_list.append(stock)
+        return flattened_list
+
+    @staticmethod
     def propagate_attrs(orig_df, new_df):
         new_df.attrs = orig_df.attrs.copy()
         return new_df
 
     @staticmethod
     def get_raw_stock(
-            name: str,
-            period: str = None,
-            start_date: datetime = None,
-            end_date: datetime = None,
+        name: str,
+        period: str = None,
+        start_date: datetime = None,
+        end_date: datetime = None,
     ) -> pd.DataFrame:
         ticker = yf.Ticker(name)
-        historical_data = ticker.history(start=start_date, end=end_date, period=period)
+        historical_data = ticker.history(
+            start=start_date, end=end_date, period=period, auto_adjust=False
+        )
 
         if historical_data.empty:
             raise Exception(f"Stock {name} not found")
@@ -333,7 +349,9 @@ class Features(metaclass=FeatureMeta):
                     start_date_str, end_date_str = brackets.split(",")
                     start_date = datetime.strptime(start_date_str, "%m-%d-%Y")
                     end_date = datetime.strptime(end_date_str, "%m-%d-%Y")
-                    original_df = self.get_stocks(stock, start_date=start_date, end_date=end_date)
+                    original_df = self.get_stocks(
+                        stock, start_date=start_date, end_date=end_date
+                    )
                 else:
                     start_date = datetime.strptime(brackets, "%m-%d-%Y")
                     original_df = self.get_stocks(stock, start_date=start_date)
@@ -408,11 +426,11 @@ class Features(metaclass=FeatureMeta):
         df.dropna(inplace=True)
 
     def get_stocks(
-            self,
-            name: str,
-            period: str = None,
-            start_date: datetime = None,
-            end_date: datetime = None,
+        self,
+        name: str,
+        period: str = None,
+        start_date: datetime = None,
+        end_date: datetime = None,
     ) -> pd.DataFrame:
         """
         Gets the stock data from yfinance and calculates each feature
@@ -453,7 +471,9 @@ class Features(metaclass=FeatureMeta):
         df = pd.concat(feat_data.values(), axis=1)
 
         # Propagate attrs to the new DataFrame
-        df = self.propagate_attrs(self.get_raw_stock(name, period, start_date, end_date), df)
+        df = self.propagate_attrs(
+            self.get_raw_stock(name, period, start_date, end_date), df
+        )
 
         df = df[list(self.list_cols(with_true=True, prev_cols=True))]
 
@@ -508,7 +528,7 @@ class Features(metaclass=FeatureMeta):
 
 def import_children(directory="Features"):
     models_dir = os.path.join(os.path.dirname(__file__), directory)
-    
+
     for filename in os.listdir(models_dir):
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name = filename[:-3]
