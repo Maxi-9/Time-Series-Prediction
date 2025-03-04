@@ -509,7 +509,7 @@ class Features(metaclass=FeatureMeta):
             if feature not in self.base_features.values():
                 feat_df = feature.calculate(df.copy())
             else:
-                print(f"DF cols: {df.columns} vs requested cols: {feature.cols()}")
+                # print(f"DF cols: {df.columns} vs requested cols: {feature.cols()}")
                 feat_df = df[feature.cols()].copy()
 
             feat_data[feature] = feat_df
