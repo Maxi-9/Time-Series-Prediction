@@ -9,7 +9,7 @@ class Normalizer:
 
     def __init__(self, df: pd.DataFrame, scale_cols: [str]):
         self.scalars = {}
-        df = df.copy()
+        df = df.copy(deep=True)
         for col in scale_cols:
             scaler = MinMaxScaler()
             df.loc[:, col] = scaler.fit_transform(df[[col]])
@@ -17,14 +17,14 @@ class Normalizer:
 
     def scale(self, df: pd.DataFrame) -> pd.DataFrame:
         # Scales using the scalars
-        df = df.copy()
+        df = df.copy(deep=True)
         for col, scaler in self.scalars.items():
             if col in df.columns:
                 df[col] = scaler.transform(df[[col]])
         return df
 
     def inv_normalize(self, data: pd.DataFrame) -> pd.DataFrame:
-        data = data.copy()
+        data = data.copy(deep=True)
         for col, scaler in self.scalars.items():
             if col in data.columns:
                 data[col] = scaler.inverse_transform(data[[col]])
@@ -41,7 +41,7 @@ class Normalizer:
     def inv_normalize_col(
         self, data: pd.DataFrame, convert: str, based_on: str
     ) -> pd.DataFrame:
-        data = data.copy()
+        data = data.copy(deep=True)
         scaler = self.scalars.get(based_on)
         if scaler is not None:
             data[convert] = scaler.inverse_transform(data[[convert]])
