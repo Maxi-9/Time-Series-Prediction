@@ -47,7 +47,7 @@ class LightningSequentialModel(L.LightningModule):
 
 class SequentialModel(Commons):
     def __init__(self):
-        # Set hyperparameters and initialize model as before
+        # Set hyperparameters and initialize model
         self.hidden_size = 128
         self.num_layers = 2
         self.learning_rate = 0.001
@@ -67,12 +67,18 @@ class SequentialModel(Commons):
         output_size = 1
 
         self.model = LightningSequentialModel(
-            input_size, self.hidden_size, self.num_layers, output_size, self.learning_rate
+            input_size,
+            self.hidden_size,
+            self.num_layers,
+            output_size,
+            self.learning_rate,
         )
 
         # Initialize Trainer once with checkpointing callback
         self.checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(
-            dirpath="checkpoints/", filename="model-{epoch:02d}-{loss:.2f}", save_top_k=1
+            dirpath="checkpoints/",
+            filename="model-{epoch:02d}-{loss:.2f}",
+            save_top_k=1,
         )
 
         self.trainer = L.Trainer(
@@ -89,7 +95,7 @@ class SequentialModel(Commons):
     def worker_init_function(worker_id):
         worker_seed = torch.initial_seed() % 2**32
         np.random.seed(worker_seed)
-        
+
     @overrides
     def _train(self, df: pd.DataFrame):
         # Prepare data as before
@@ -103,6 +109,9 @@ class SequentialModel(Commons):
             torch.tensor(y_rolled, dtype=torch.float32),
         )
 
+        if not self.seed:
+            self.seed = int(time.time() * 1000) % 2**32
+
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -110,7 +119,9 @@ class SequentialModel(Commons):
             num_workers=7,
             persistent_workers=True,
             worker_init_fn=self.worker_init_function,
-            generator=torch.Generator().manual_seed(self.seed),
+            generator=torch.Generator().manual_seed(
+                self.seed if self.seed is not None else int(time.time() * 1000) % 2**32
+            ),
         )
 
         try:
@@ -153,5 +164,4 @@ class SequentialModel(Commons):
         return prediction
 
 
-# Uncomment this to add to train.py/test.py/predict.py automatically
 Commons.model_mapping["Sequential"] = SequentialModel
