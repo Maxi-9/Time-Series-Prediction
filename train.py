@@ -1,9 +1,11 @@
+import traceback
+
 from TimeSeriesPrediction.data import Data
 from TimeSeriesPrediction.model import Commons
 from Tools.parse_args import Parse_Args
 
 
-# Testing Args:  python3 Train.py Models/test.spm Linear -o -s AAPL -s AMZN Train on AMZN, MSFT, GOOGL, TSLA, META,
+# Train Args:  python3 Train.py Models/test.spm Linear -t 1 -o -s StockList/train.csv
 
 
 @Parse_Args.parser("Train ML model.")
@@ -43,6 +45,7 @@ def main(filename, debug, split, overwrite, mtype, stocks, save, seed):
                 test_sets.append((stockName, test_df.copy()))
         except Exception as e:
             print("Failed on: ", stockName, e)
+            traceback.print_tb(e.__traceback__)
 
     model.save_model(filename)
     print(f"Successfully saved model at: {filename}")
