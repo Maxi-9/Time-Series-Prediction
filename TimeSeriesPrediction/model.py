@@ -6,6 +6,7 @@ import sys
 import time
 import warnings
 from abc import ABC, abstractmethod
+from contextlib import redirect_stdout
 from datetime import datetime
 from typing import Tuple
 
@@ -22,6 +23,7 @@ from TimeSeriesPrediction.metrics import Metrics
 from TimeSeriesPrediction.normalizer import Normalizer
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
 
 # Exceptions:
 class ModelNotTrainedError(Exception):
@@ -45,7 +47,6 @@ class Commons(ABC):
     Base Class for all models and should be inherited.
     Not to be initiated directly!
     """
-
 
     model_mapping = {}
 
@@ -73,16 +74,15 @@ class Commons(ABC):
     def use_seed(self, seed: int | None = None):
         if seed is None:
             seed = int(time.time() * 1000) % 2**32
-
-        self.seed = seed
-        os.environ["PYTHONHASHSEED"] = str(seed)
-        pl.seed_everything(seed, workers=True)
-        np.random.seed(seed)
-
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-        return seed
+        with open(os.devnull, "w") as devnull:
+            with redirect_stdout(devnull):
+                # your code here—for example:
+                seed = int(time.time() * 1000) % 2**32
+                os.environ["PYTHONHASHSEED"] = str(seed)
+                pl.seed_everything(seed, workers=True)
+                np.random.seed(seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
     def save_model(self, file: str, compress_lvl=6):
         """
@@ -160,12 +160,15 @@ class Commons(ABC):
         """
         self.use_seed(self.seed)
         if "last_date" in df.attrs:
-            date=df.attrs["last_date"]
+            date = df.attrs["last_date"]
         else:
-            date=df.index[-1]
-        return date, self._inv_normalize_value(
-            self._predict(self._normalize(df)), str(self.features.true_col())
-        )[0]
+            date = df.index[-1]
+        return (
+            date,
+            self._inv_normalize_value(
+                self._predict(self._normalize(df)), str(self.features.true_col())
+            )[0],
+        )
 
     def _normalize(
         self, df: pd.DataFrame, convert: [str] = None, allow_calibration=False
