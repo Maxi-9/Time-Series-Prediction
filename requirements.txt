@@ -1,5 +1,5 @@
 pandas~=1.5.3
-yfinance==0.2.18
+yfinance
 scikit-learn
 joblib~=1.4.2
 overrides~=7.4.0
@@ -13,3 +13,4 @@ scipy>=1.6.3 # For yfinance price repair?
 lightning~=2.3.1
 tensorflow~=2.18.0
 pytorch-lightning~=2.4.0
+pyjion
