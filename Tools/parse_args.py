@@ -55,13 +55,6 @@ class Parse_Args:
         help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
     )
 
-    log = click.option(
-        "--log",
-        type=str,
-        default="log",
-        help="Creates a log file for each stock, designed as a way to measure the performance of the models in a real world scenario. Used by validate.py for full analysis.",
-    )
-
     @staticmethod
     def stocks(default=None, multiple=True):
         if default is None:
