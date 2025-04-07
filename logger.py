@@ -25,6 +25,7 @@ def append_csv_log(csv_path, header, row):
 @Parse_Args.seed
 def main(filename, seed):
     today_date = datetime.now().strftime("%Y-%m-%d")
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Load daily configuration from the provided config file
     with open(filename, "r") as config_file:
@@ -162,7 +163,7 @@ def main(filename, seed):
                     )
 
                 row = {
-                    "Date": today_date,
+                    "Date": now_time,
                     "Stock": stock,
                     "Pred_On": pred_on,
                     "Predicted": predicted,
