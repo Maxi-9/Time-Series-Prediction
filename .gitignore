@@ -27,3 +27,5 @@ checkpoints
 
 !/checkpoints/
 !/lightning_logs/
+
+.qodo
