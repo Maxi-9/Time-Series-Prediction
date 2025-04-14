@@ -1,3 +1,5 @@
+import time
+
 import lightning as L
 import torch.nn as nn
 import torch.utils.data
@@ -56,8 +58,8 @@ class BinarySequentialModel(Commons):
         self.learning_rate = 0.001
         self.num_epochs = 100
         self.batch_size = 32
-        self.lookback = 30  # rolling window size
-        self.seed = 42
+        # self.lookback = 300 # Uses default lookback
+        self.seed = None
 
         feat = [
             Features.Open,
@@ -92,7 +94,7 @@ class BinarySequentialModel(Commons):
             max_epochs=self.num_epochs,
             log_every_n_steps=10,
             enable_checkpointing=True,
-            deterministic=True,
+            deterministic=(self.seed is not None),
             callbacks=[self.checkpoint_callback],
         )
 
@@ -112,7 +114,7 @@ class BinarySequentialModel(Commons):
             max_epochs=self.num_epochs,
             log_every_n_steps=10,
             enable_checkpointing=True,
-            deterministic=True,
+            deterministic=(self.seed is not None),
             callbacks=[self.checkpoint_callback],
         )
 

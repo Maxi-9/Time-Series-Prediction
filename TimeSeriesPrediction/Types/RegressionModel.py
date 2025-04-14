@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from overrides import overrides
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import SGDRegressor
 
 from TimeSeriesPrediction.data import Data
 from TimeSeriesPrediction.features import Features
@@ -19,9 +19,7 @@ class RegressionModel(Commons):
             Features.MA,
             Features.MACD,
         ]
-        super().__init__(
-            LinearRegression(), "Linear", Features(feat, Features.Close), lookback=1
-        )
+        super().__init__(SGDRegressor(), "Linear", Features(feat, Features.Close))
 
     # Trains Model on given data
     @overrides
@@ -53,7 +51,9 @@ class RegressionModel(Commons):
 
     @overrides
     def _predict(self, df: pd.DataFrame) -> float:
-        x = df[self.features.train_cols()].iloc[[-1]]  # Select the last row
+        x = df[self.features.train_cols()].values[
+            -self.lookback :
+        ]  # Select the last row
 
         # Predict the target values using the model
         prediction = self.model.predict(x)

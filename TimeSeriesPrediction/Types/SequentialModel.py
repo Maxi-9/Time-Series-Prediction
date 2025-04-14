@@ -1,3 +1,5 @@
+import time
+
 import lightning as L
 import torch.nn as nn
 import torch.utils.data
@@ -108,9 +110,6 @@ class SequentialModel(Commons):
             torch.tensor(x_rolled, dtype=torch.float32),
             torch.tensor(y_rolled, dtype=torch.float32),
         )
-
-        if not self.seed:
-            self.seed = int(time.time() * 1000) % 2**32
 
         train_loader = torch.utils.data.DataLoader(
             train_dataset,

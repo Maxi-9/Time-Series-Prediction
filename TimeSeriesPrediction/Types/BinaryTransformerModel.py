@@ -1,4 +1,5 @@
 import math
+import time
 
 import lightning as L
 import torch.nn as nn
@@ -30,7 +31,7 @@ class PositionalEncoding(nn.Module):
 
 
 class LightningBinaryTransformerModel(L.LightningModule):
-    def __init__(self, input_size, hidden_size, num_layers, learning_rate):
+    def __init__(self, input_size, hidden_size, num_layers, output_size, learning_rate):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -38,64 +39,71 @@ class LightningBinaryTransformerModel(L.LightningModule):
 
         # Project input features to model dimension (hidden_size)
         self.input_proj = nn.Linear(input_size, hidden_size)
+
         # Positional encoding
         self.pos_encoder = PositionalEncoding(hidden_size, dropout=0.1)
+
         # Transformer Encoder: using 4 heads (hidden_size must be divisible by nhead)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_size, nhead=4, dropout=0.1
         )
-        encoder_layer.self_attn.batch_first = True
+        # encoder_layer.self_attn.batch_first = True
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_layers
         )
-        # Final output layer with one output unit
-        self.fc = nn.Linear(hidden_size, 1)
-        # Sigmoid activation to get output in [0,1]
+
+        # Final output layer
+        self.fc = nn.Linear(hidden_size, output_size)
+
+        # Sigmoid activation to convert logits into binary confidence
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # x: (batch, seq, features)
         x = self.input_proj(x)  # -> (batch, seq, hidden_size)
-        # Transformer expects input as (seq, batch, hidden_size)
+        # Transformer expects input shape as (seq, batch, hidden_size)
         x = x.permute(1, 0, 2)
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)
         # Use the output from the last time step
         x = x[-1, :, :]
         out = self.fc(x)
+        # Convert raw output to a probability/confidence value between 0 and 1
         out = self.sigmoid(out)
         return out
 
     def training_step(self, batch, batch_idx):
         inputs, targets = batch
         outputs = self(inputs)
-        # Use binary cross entropy loss for binary classification
-        loss = nn.BCELoss()(outputs, targets.unsqueeze(1))
+        # Use Binary Cross Entropy loss
+        loss = nn.BCELoss()(outputs, targets.unsqueeze(1).float())
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, targets = batch
         outputs = self(inputs)
-        loss = nn.BCELoss()(outputs, targets.unsqueeze(1))
-        self.log("val_loss", loss)
+        # Use Binary Cross Entropy loss
+        loss = nn.BCELoss()(outputs, targets.unsqueeze(1).float())
+        self.log("val_loss", loss, prog_bar=True)
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
 
 
-class BinaryTransformerModel(Commons):
+class TransformerModel(Commons):
     def __init__(self):
-        # Set hyperparameters
+        # Set hyperparameters and initialize model
         self.hidden_size = 128
         self.num_layers = 2
         self.learning_rate = 0.001
         self.num_epochs = 100
         self.batch_size = 32
-        self.seed = int(time.time() * 1000) % 2**32
+        # self.lookback = 300 # Uses default lookback
+        self.seed = None
 
-        # Define the features used; adjust these as necessary for your dataset
         feat = [
             Features.Open,
             Features.BB,
@@ -104,20 +112,22 @@ class BinaryTransformerModel(Commons):
             Features.MA,
             Features.MACD,
         ]
-        f_list = Features(feat, Features.Close)
-        input_size = len(list(f_list.train_cols()))
-        # For binary classification output, we use 1 unit (with sigmoid activation)
+        f_list = Features(feat, Features.Increased)
+        input_size = len(list(f_list.train_cols(prev_cols=True)))
+        output_size = 1
+
         self.model = LightningBinaryTransformerModel(
             input_size,
             self.hidden_size,
             self.num_layers,
+            output_size,
             self.learning_rate,
         )
 
         # Initialize Trainer with checkpointing callback
         self.checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(
             dirpath="checkpoints/",
-            filename="binary_transformer_model-{epoch:02d}-{loss:.2f}",
+            filename="model-{epoch:02d}-{loss:.2f}",
             save_top_k=1,
         )
 
@@ -125,7 +135,7 @@ class BinaryTransformerModel(Commons):
             max_epochs=self.num_epochs,
             log_every_n_steps=10,
             enable_checkpointing=True,
-            deterministic=True,
+            deterministic=(self.seed is not None),
             callbacks=[self.checkpoint_callback],
         )
 
@@ -154,12 +164,9 @@ class BinaryTransformerModel(Commons):
             max_epochs=self.num_epochs,
             log_every_n_steps=10,
             enable_checkpointing=True,
-            deterministic=True,
+            deterministic=(self.seed is not None),
             callbacks=[self.checkpoint_callback],
         )
-
-        if not self.seed:
-            self.seed = int(time.time() * 1000) % 2**32
 
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
@@ -168,7 +175,9 @@ class BinaryTransformerModel(Commons):
             num_workers=7,
             persistent_workers=True,
             worker_init_fn=self.worker_init_function,
-            generator=torch.Generator().manual_seed(self.seed),
+            generator=torch.Generator().manual_seed(
+                self.seed if self.seed is not None else int(time.time() * 1000) % 2**32
+            ),
         )
 
         try:
@@ -194,22 +203,21 @@ class BinaryTransformerModel(Commons):
                 x_window = torch.tensor(x_window, dtype=torch.float32).unsqueeze(0)
                 output = self.model(x_window)
                 predictions.append(output.cpu().numpy())
+
         predictions = np.concatenate(predictions, axis=0)
         return predictions
 
     @overrides
-    def _predict(self, df: pd.DataFrame) -> dict:
-        # Return both the binary prediction and the confidence score.
+    def _predict(self, df: pd.DataFrame) -> float:
         x_pred = df[self.features.train_cols()].values[-self.lookback :]
         x_pred = torch.tensor(x_pred, dtype=torch.float32).unsqueeze(0)
 
         self.model.eval()
         with torch.no_grad():
             output = self.model(x_pred)
-            confidence = output.cpu().item()
-            prediction = 1 if confidence >= 0.5 else 0
+            prediction = output.cpu().item()
 
-        return {"prediction": prediction, "confidence": confidence}
+        return prediction
 
 
-Commons.model_mapping["BinaryTransformer"] = BinaryTransformerModel
+Commons.model_mapping["BinaryTransformer"] = TransformerModel

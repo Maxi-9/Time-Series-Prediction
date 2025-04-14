@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-import time
 import warnings
 from abc import ABC, abstractmethod
 from contextlib import redirect_stdout
@@ -50,7 +49,9 @@ class Commons(ABC):
 
     model_mapping = {}
 
-    def __init__(self, model, model_type: str, features: Features, lookback: int = 30):
+    def __init__(
+        self, model, model_type: str, features: Features, lookback: int = None
+    ):
         # Sets the version of scheme(stored values)
         self.seed = None
         self.model_version: float = 1.0
@@ -58,7 +59,11 @@ class Commons(ABC):
 
         # Model training settings
         self.features = features
-        self.lookback: int = lookback
+        if lookback is None and not hasattr(self, "lookback") or self.lookback is None:
+            self.lookback: int = 300
+        else:
+            self.lookback: int = lookback
+
         self.training_stock: [str] = []
         self.is_trained = False
 
@@ -71,13 +76,11 @@ class Commons(ABC):
     def set_seed(self, seed: int | None = None):
         self.seed = seed
 
-    def use_seed(self, seed: int | None = None):
+    def use_seed(self, seed: int):
         if seed is None:
-            seed = int(time.time() * 1000) % 2**32
+            return
         with open(os.devnull, "w") as devnull:
             with redirect_stdout(devnull):
-                # your code here—for example:
-                seed = int(time.time() * 1000) % 2**32
                 os.environ["PYTHONHASHSEED"] = str(seed)
                 pl.seed_everything(seed, workers=True)
                 np.random.seed(seed)

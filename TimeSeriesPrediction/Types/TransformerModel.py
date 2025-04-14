@@ -1,4 +1,5 @@
 import math
+import time
 
 import lightning as L
 import torch.nn as nn
@@ -92,7 +93,6 @@ class TransformerModel(Commons):
         self.learning_rate = 0.001
         self.num_epochs = 100
         self.batch_size = 32
-        self.seed = int(time.time() * 1000) % 2**32
 
         feat = [
             Features.Open,
