@@ -3,24 +3,143 @@ import csv
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, time
 
+import backtrader as bt
+
+# Import your libraries for feature engineering and models.
 from TimeSeriesPrediction.features import Features
 from TimeSeriesPrediction.model import Commons
 from Tools.parse_args import Parse_Args
 
 
 def append_csv_log(csv_path, header, row):
-    file_exists = os.path.exists(csv_path)
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    with open(csv_path, "a", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
+    """Append a row to the CSV log file; create header if not already present."""
+    try:
+        file_exists = os.path.exists(csv_path)
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        with open(csv_path, "a", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=header)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(row)
+    except Exception as e:
+        print(f"Error logging to CSV file {csv_path}: {e}")
 
 
-@Parse_Args.parser("Daily tester with smart stock processing.")
+class ModelBasedStrategy(bt.Strategy):
+    params = (
+        ("model", None),  # Loaded prediction model (expects a predict(df) method)
+        (
+            "profile",
+            None,
+        ),  # Dictionary specifying trading method settings for this stock
+        ("log_csv", ""),  # Path to CSV log file for this model
+        ("buy_time", time(7, 40)),  # Configurable buy time (e.g. 9:40 AM)
+        ("sell_time", time(13, 50)),  # Configurable sell time (e.g. 3:50 PM)
+        ("seed", None),  # Optional seed for reproducibility
+    )
+
+    def __init__(self):
+        self.order = None
+        self.open_order_placed = False
+        self.close_order_placed = False
+        # Cache the first open value for reference if needed.
+        self.initial_data = self.data.open[0]
+
+    def next(self):
+        # Retrieve the current date/time from the data feed.
+        current_datetime = self.data.datetime.datetime(0)
+        current_time = current_datetime.time()
+
+        # --- BUY EXECUTION AT OR AFTER buy_time ---
+        if (not self.open_order_placed) and current_time >= self.p.buy_time:
+            try:
+                # Prepare data for prediction.
+                # For demonstration, we build a minimal pandas DataFrame using the current open price.
+                # In your full implementation, you may want to collect a proper slice with all needed columns.
+                pred_on = self.data.open[0]
+                import pandas as pd
+
+                df = pd.DataFrame(
+                    {
+                        "Open": [pred_on],
+                        # Add additional columns required by your model here…
+                    }
+                )
+
+                # Run the prediction using your model.
+                date_pred, predicted = self.p.model.predict(df)
+
+                # Check that the predicted date matches today.
+                today_str = current_datetime.strftime("%Y-%m-%d")
+                if date_pred.strftime("%Y-%m-%d") != today_str:
+                    raise ValueError(
+                        f"Predicted date {date_pred.strftime('%Y-%m-%d')} does not match today's date {today_str}"
+                    )
+
+                # Log prediction result to CSV.
+                csv_header = ["Date", "Stock", "Pred_On", "Predicted"]
+                log_row = {
+                    "Date": current_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Stock": self.data._name,
+                    "Pred_On": pred_on,
+                    "Predicted": predicted,
+                }
+                append_csv_log(self.p.log_csv, csv_header, log_row)
+                print(f"[{self.data._name}] Prediction: {pred_on} -> {predicted}")
+
+                # --- Place Buy Order According to Trading Profile ---
+                buy_method = self.p.profile.get("buy_method", "market")
+                if buy_method == "market":
+                    self.order = self.buy()  # Market order.
+                elif buy_method == "limit":
+                    # Use limit order (price taken from profile or default to current price).
+                    limit_price = self.p.profile.get("limit_price", pred_on)
+                    self.order = self.buy(price=limit_price, exectype=bt.Order.Limit)
+                elif buy_method == "stop":
+                    # Use stop order.
+                    stop_price = self.p.profile.get("stop_price", pred_on)
+                    self.order = self.buy(price=stop_price, exectype=bt.Order.Stop)
+                elif buy_method == "stop-limit":
+                    # Use stop-limit order; requires both stop and limit prices.
+                    stop_price = self.p.profile.get("stop_price", pred_on)
+                    limit_price = self.p.profile.get("limit_price", pred_on)
+                    self.order = self.buy(
+                        price=limit_price, exectype=bt.Order.StopLimit
+                    )
+                else:
+                    # If the profile is unrecognized, default to market.
+                    self.order = self.buy()
+
+                self.open_order_placed = True
+
+            except Exception as e:
+                print(f"Error processing open order for {self.data._name}: {e}")
+
+        # --- SELL EXECUTION AT OR AFTER sell_time ---
+        if (
+            self.open_order_placed
+            and (not self.close_order_placed)
+            and current_time >= self.p.sell_time
+        ):
+            try:
+                # For this example, we use a market order to exit.
+                self.order = self.sell()
+                self.close_order_placed = True
+            except Exception as e:
+                print(f"Error processing sell order for {self.data._name}: {e}")
+
+    def notify_order(self, order):
+        # Callback to check order status and print execution info.
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                print(f"[{self.data._name}] Buy executed at {order.executed.price}")
+            elif order.issell():
+                print(f"[{self.data._name}] Sell executed at {order.executed.price}")
+
+
+@Parse_Args.parser("Trading Bot with Model-based orders and backtrader integration.")
 @Parse_Args.filename
 @Parse_Args.seed
 def main(filename, seed):
