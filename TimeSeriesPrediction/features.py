@@ -529,11 +529,6 @@ class Features(metaclass=FeatureMeta):
         # Concatenate feature data
         df = pd.concat(feat_data.values(), axis=1)
 
-        # Propagate attrs to the new DataFrame
-        # df = self.propagate_attrs(
-        #     self.get_raw_stock(name, period, start_date, end_date), df
-        # )
-
         df = df[list(self.list_cols(with_true=True, prev_cols=True))]
 
         orig_len = len(df)
