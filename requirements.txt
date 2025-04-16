@@ -13,4 +13,4 @@ scipy>=1.6.3 # For yfinance price repair?
 lightning~=2.3.1
 tensorflow~=2.18.0
 pytorch-lightning~=2.4.0
-pyjion
+# Todo: Reanalyze project for dependencies
