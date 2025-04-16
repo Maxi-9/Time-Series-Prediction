@@ -102,7 +102,7 @@ class Commons(ABC):
         :param df: DataFrame with all features
         :return: None
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     @abstractmethod
     def _batch_predict(self, df: pd.DataFrame) -> np.array:
@@ -110,7 +110,7 @@ class Commons(ABC):
         :param df: Stock market data with all features
         :return: returns just the prediction column (pred_value column)
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     @abstractmethod
     def _predict(self, df: pd.DataFrame) -> float:
@@ -118,7 +118,7 @@ class Commons(ABC):
         :param df: takes input
         :return: returns just the prediction
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     def train(self, df: pd.DataFrame):
         """
@@ -128,8 +128,6 @@ class Commons(ABC):
         """
         self.use_seed(self.seed)
         self._train(self._normalize(df, allow_calibration=True))
-
-    # Overwritten for prediction of outputs, Adds column of "pred_value" as close predictions from model
 
     def batch_predict(self, df: pd.DataFrame) -> np.ndarray:
         """
@@ -288,7 +286,7 @@ class Commons(ABC):
 
 def import_children(directory="Types"):
     models_dir = os.path.join(os.path.dirname(__file__), directory)
-    sys.path.insert(0, models_dir)  # Add the directory to sys.path
+    sys.path.insert(0, models_dir)
     for file in os.listdir(models_dir):
         if file.endswith("Model.py"):
             model_name = file[:-3]  # Remove the .py extension
@@ -299,5 +297,4 @@ def import_children(directory="Types"):
     sys.path.remove(models_dir)  # Remove the directory from sys.path after importing
 
 
-# Assuming the child classes are in a directory named 'children'
 import_children()
