@@ -26,6 +26,6 @@ checkpoints
 *.ckpt
 
 !/checkpoints/
-!/lightning_logs/
+!/lightning_logs/*
 
-.qodo
+metrics.csv
