@@ -71,3 +71,5 @@ fi
 
 echo "All models trained successfully!"
 
+# Deactivate virtual environment
+deactivate
