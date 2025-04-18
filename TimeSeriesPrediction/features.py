@@ -129,7 +129,10 @@ class BaseFeature:
 
         return buy_signals
 
-    def _calc_buy_signal(self, current_value, predicted_value):
+    def shouldBuy(self, current_values, predicted_value):
+        return self._calc_buy_signal(current_values, predicted_value)
+
+    def _calc_buy_signal(self, current_values, predicted_value):
         # Implement your buy/sell signal logic here
         raise NotImplementedError(
             "_calc_buy_signal method must be implemented in subclasses."
@@ -160,8 +163,8 @@ class Open(BaseFeature):
         pass  # Not implementing because base feature
 
     @overrides
-    def _calc_buy_signal(self, current_value, predicted_value):
-        if predicted_value > current_value["prev_open"]:
+    def _calc_buy_signal(self, current_values, predicted_value):
+        if predicted_value > current_values["prev_open"]:
             return True
         else:
             return False
@@ -190,8 +193,8 @@ class Close(BaseFeature):
         pass  # Not implementing because base feature
 
     @overrides
-    def _calc_buy_signal(self, current_value, predicted_value):
-        if predicted_value > current_value[list(Features.Open.cols())[0]]:
+    def _calc_buy_signal(self, current_values, predicted_value):
+        if predicted_value > current_values[list(Features.Open.cols())[0]]:
             return True
         else:
             return False
@@ -233,9 +236,9 @@ class Increased(BaseFeature):
         increased = int(df[close_column].iloc[-1] > df[open_column].iloc[-1])
         return {"Increased": increased}
 
-    def _calc_buy_signal(self, current_value, predicted_value):
+    def _calc_buy_signal(self, current_values, predicted_value):
         # Buy if the predicted probability is above 0.5
-        return 1 if predicted_value > 0.5 else 0
+        return 1 if predicted_value > 0.95 else 0
 
     @overrides
     def price_diff(self, df):
@@ -384,6 +387,67 @@ class Features(metaclass=FeatureMeta):
         historical_data.attrs["last_date"] = historical_data.index[-1]
 
         return historical_data
+
+    @staticmethod
+    def get_batch_raw_stocks(
+        stocks: list[tuple[str, str, datetime, datetime]],
+    ) -> dict[str, pd.DataFrame]:
+        """Download data for multiple tickers in a single call, and return a dict of dataframes.
+
+        Args:
+            stocks (list[str, str, datetime, datetime]): List of tuples (ticker, period, start_date, end_date)
+        Returns:
+            dict[str, pd.DataFrame]: Dictionary of tickers to dataframes
+
+        """
+        by_date_range = {}
+        for stock_info in stocks:
+            name = stock_info[0]
+            period = stock_info[1] if len(stock_info) > 1 else None
+            start_date = stock_info[2] if len(stock_info) > 2 else None
+            end_date = stock_info[3] if len(stock_info) > 3 else None
+
+            key = (period, start_date, end_date)
+            if key not in by_date_range:
+                by_date_range[key] = []
+            by_date_range[key].append(name)
+
+        # Fetch each group with a single call
+        result = {}
+        for (period, start_date, end_date), tickers in by_date_range.items():
+            # Join tickers with space as required by yfinance
+            ticker_str = " ".join(tickers)
+
+            # Download data for this batch
+            data = yf.download(
+                tickers=ticker_str,
+                period=period,
+                start=start_date,
+                end=end_date,
+                group_by="ticker",
+            )
+
+            # Handle single ticker case differently
+            if len(tickers) == 1:
+                ticker = tickers[0]
+                stock_data = data.copy()
+                if not stock_data.empty:
+                    stock_data.index = stock_data.index.tz_localize(None).normalize()
+                    stock_data.attrs["last_date"] = stock_data.index[-1]
+                    result[ticker] = stock_data
+            else:
+                # Process results for multiple tickers
+                for ticker in tickers:
+                    if ticker in data.columns.levels[0]:
+                        stock_data = data[ticker].copy()
+                        if not stock_data.empty:
+                            stock_data.index = stock_data.index.tz_localize(
+                                None
+                            ).normalize()
+                            stock_data.attrs["last_date"] = stock_data.index[-1]
+                            result[ticker] = stock_data
+
+        return result
 
     @staticmethod
     def parse_name(name: str):
