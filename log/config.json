@@ -1,0 +1,62 @@
+{
+  "stocks": "StockList/trial.csv",
+  "buy_time": "07:40",
+  "sell_time": "13:50",
+  "models": [
+    {
+      "model_type": "Sequential",
+      "model_path": "Models/sequential.spm",
+      "log_csv": "log/sequential_log.csv",
+      "profiles": [
+        {
+          "profile_type": "market",
+          "buy_method": "market"
+        }
+      ]
+    },
+    {
+      "model_type": "Linear",
+      "model_path": "Models/Linear.spm",
+      "log_csv": "log/linear_log.csv",
+      "profiles": [
+        {
+          "profile_type": "market",
+          "buy_method": "market"
+        }
+      ]
+    },
+    {
+      "model_type": "Transformer",
+      "model_path": "Models/transformer.spm",
+      "log_csv": "log/transformer_log.csv",
+      "profiles": [
+        {
+          "profile_type": "market",
+          "buy_method": "market"
+        }
+      ]
+    },
+    {
+      "model_type": "BinarySequential",
+      "model_path": "Models/binary-sequential.spm",
+      "log_csv": "log/binary-sequential_log.csv",
+      "profiles": [
+        {
+          "profile_type": "market",
+          "buy_method": "market"
+        }
+      ]
+    },
+    {
+      "model_type": "BinaryTransformerModel",
+      "model_path": "Models/binary-transformer.spm",
+      "log_csv": "log/binary-transformer_log.csv",
+      "profiles": [
+        {
+          "profile_type": "market",
+          "buy_method": "market"
+        }
+      ]
+    }
+  ]
+}

@@ -3,8 +3,9 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-import time
+import warnings
 from abc import ABC, abstractmethod
+from contextlib import redirect_stdout
 from datetime import datetime
 from typing import Tuple
 
@@ -19,6 +20,8 @@ from TimeSeriesPrediction.data import Data
 from TimeSeriesPrediction.features import Features
 from TimeSeriesPrediction.metrics import Metrics
 from TimeSeriesPrediction.normalizer import Normalizer
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 # Exceptions:
@@ -44,12 +47,11 @@ class Commons(ABC):
     Not to be initiated directly!
     """
 
-    # Add mappings here to use in CLI
-    model_mapping = {
-        # Add other mappings here
-    }
+    model_mapping = {}
 
-    def __init__(self, model, model_type: str, features: Features, lookback: int = 30):
+    def __init__(
+        self, model, model_type: str, features: Features, lookback: int = None
+    ):
         # Sets the version of scheme(stored values)
         self.seed = None
         self.model_version: float = 1.0
@@ -57,7 +59,11 @@ class Commons(ABC):
 
         # Model training settings
         self.features = features
-        self.lookback: int = lookback
+        if lookback is None and not hasattr(self, "lookback") or self.lookback is None:
+            self.lookback: int = 300
+        else:
+            self.lookback: int = lookback
+
         self.training_stock: [str] = []
         self.is_trained = False
 
@@ -70,19 +76,16 @@ class Commons(ABC):
     def set_seed(self, seed: int | None = None):
         self.seed = seed
 
-    def use_seed(self, seed: int | None = None):
+    def use_seed(self, seed: int):
         if seed is None:
-            seed = int(time.time() * 1000) % 2**32
-
-        self.seed = seed
-        os.environ["PYTHONHASHSEED"] = str(seed)
-        pl.seed_everything(seed, workers=True)
-        np.random.seed(seed)
-
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-        return seed
+            return
+        with open(os.devnull, "w") as devnull:
+            with redirect_stdout(devnull):
+                os.environ["PYTHONHASHSEED"] = str(seed)
+                pl.seed_everything(seed, workers=True)
+                np.random.seed(seed)
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
 
     def save_model(self, file: str, compress_lvl=6):
         """
@@ -99,7 +102,7 @@ class Commons(ABC):
         :param df: DataFrame with all features
         :return: None
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     @abstractmethod
     def _batch_predict(self, df: pd.DataFrame) -> np.array:
@@ -107,7 +110,7 @@ class Commons(ABC):
         :param df: Stock market data with all features
         :return: returns just the prediction column (pred_value column)
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     @abstractmethod
     def _predict(self, df: pd.DataFrame) -> float:
@@ -115,7 +118,7 @@ class Commons(ABC):
         :param df: takes input
         :return: returns just the prediction
         """
-        raise NotImplementedError()
+        raise BaseClassError()
 
     def train(self, df: pd.DataFrame):
         """
@@ -125,8 +128,6 @@ class Commons(ABC):
         """
         self.use_seed(self.seed)
         self._train(self._normalize(df, allow_calibration=True))
-
-    # Overwritten for prediction of outputs, Adds column of "pred_value" as close predictions from model
 
     def batch_predict(self, df: pd.DataFrame) -> np.ndarray:
         """
@@ -160,12 +161,15 @@ class Commons(ABC):
         """
         self.use_seed(self.seed)
         if "last_date" in df.attrs:
-            date=df.attrs["last_date"]
+            date = df.attrs["last_date"]
         else:
-            date=df.index[-1]
-        return date, self._inv_normalize_value(
-            self._predict(self._normalize(df)), str(self.features.true_col())
-        )[0]
+            date = df.index[-1]
+        return (
+            date,
+            self._inv_normalize_value(
+                self._predict(self._normalize(df)), str(self.features.true_col())
+            )[0],
+        )
 
     def _normalize(
         self, df: pd.DataFrame, convert: [str] = None, allow_calibration=False
@@ -282,7 +286,7 @@ class Commons(ABC):
 
 def import_children(directory="Types"):
     models_dir = os.path.join(os.path.dirname(__file__), directory)
-    sys.path.insert(0, models_dir)  # Add the directory to sys.path
+    sys.path.insert(0, models_dir)
     for file in os.listdir(models_dir):
         if file.endswith("Model.py"):
             model_name = file[:-3]  # Remove the .py extension
@@ -293,5 +297,4 @@ def import_children(directory="Types"):
     sys.path.remove(models_dir)  # Remove the directory from sys.path after importing
 
 
-# Assuming your child classes are in a directory named 'children'
 import_children()

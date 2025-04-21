@@ -7,6 +7,8 @@ from Tools.parse_args import Parse_Args
 @Parse_Args.seed
 @Parse_Args.stocks(multiple=False)
 def main(filename, stocks, seed):
+    if ".csv" in stocks:
+        raise ValueError("Please select a single stock not csv file")
 
     model = Commons.load_from_file(filename)
 

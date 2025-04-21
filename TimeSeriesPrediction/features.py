@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 import yfinance as yf
 from overrides import overrides
+from pandas import DataFrame
 
 
 class Predictable:
@@ -76,7 +77,7 @@ class BaseFeature:
     def true_col(self):
         if self.is_sensitive:
             return "true_" + self.columns[0]
-        raise ValueError("This feature is not sensitive.")
+        raise ValueError("This feature is not sensitive so it doesn't have a true col.")
 
     def calculate(self, df: pd.DataFrame, window=None) -> pd.DataFrame:
         """
@@ -96,6 +97,8 @@ class BaseFeature:
                 end = i
                 window_data = df.iloc[start:end]
                 result = self._calculate(window_data)
+                if result is pd.DataFrame:
+                    result = result.squeeze()
                 results.append(result)
 
             results_df = pd.DataFrame(
@@ -126,7 +129,10 @@ class BaseFeature:
 
         return buy_signals
 
-    def _calc_buy_signal(self, current_value, predicted_value):
+    def shouldBuy(self, current_values, predicted_value):
+        return self._calc_buy_signal(current_values, predicted_value)
+
+    def _calc_buy_signal(self, current_values, predicted_value):
         # Implement your buy/sell signal logic here
         raise NotImplementedError(
             "_calc_buy_signal method must be implemented in subclasses."
@@ -149,14 +155,16 @@ class Open(BaseFeature):
             columns=["Open"],
             is_sensitive=True,
             uses_data=True,
-            base_sensitive=Predictable(),  # Everything is sensitive because it is trying to predict open value
+            base_sensitive=Predictable(),
         )
 
+    @overrides
     def _calculate(self, df: pd.DataFrame) -> dict[str, float]:
         pass  # Not implementing because base feature
 
-    def _calc_buy_signal(self, current_value, predicted_value):
-        if predicted_value > current_value["prev_open"]:
+    @overrides
+    def _calc_buy_signal(self, current_values, predicted_value):
+        if predicted_value > current_values["prev_open"]:
             return True
         else:
             return False
@@ -184,8 +192,9 @@ class Close(BaseFeature):
     def _calculate(self, df: pd.DataFrame) -> dict[str, float]:
         pass  # Not implementing because base feature
 
-    def _calc_buy_signal(self, current_value, predicted_value):
-        if predicted_value > current_value[list(Features.Open.cols())[0]]:
+    @overrides
+    def _calc_buy_signal(self, current_values, predicted_value):
+        if predicted_value > current_values[list(Features.Open.cols())[0]]:
             return True
         else:
             return False
@@ -197,6 +206,47 @@ class Close(BaseFeature):
         true_close_column = Features.Close.true_col()
         # Calculate the percentage of change between open - previous close
         change = (df[true_close_column] - df[open_column]) / df[open_column]
+        return change + 1
+
+
+class Increased(BaseFeature):
+    def __init__(self):
+        # Use "Increased" as the feature name, marking it as a sensitive feature
+        super().__init__(
+            columns=["Increased"],
+            is_sensitive=True,
+            uses_data=True,
+            base_sensitive=Predictable(sOpen=True, sClose=True),
+            normalize=False,
+            is_number=True,
+        )
+
+    def _calculate(self, df: pd.DataFrame) -> dict[str, float]:
+        # Compare open to close within the same day
+        open_column = Features.Open.cols()[0]  # Get the Open column
+        close_column = Features.Close.cols()[0]  # Get the Close column
+
+        if open_column not in df or close_column not in df:
+            raise ValueError(
+                f"Missing required Open/Close columns: {open_column} and {close_column}"
+            )
+
+        df = df.copy()  # Prevent SettingWithCopyWarning
+        # Calculate the increase flag for the last row only
+        increased = int(df[close_column].iloc[-1] > df[open_column].iloc[-1])
+        return {"Increased": increased}
+
+    def _calc_buy_signal(self, current_values, predicted_value):
+        # Buy if the predicted probability is above 0.5
+        return 1 if predicted_value > 0.95 else 0
+
+    @overrides
+    def price_diff(self, df):
+        open_column = Features.Open.cols()[0]  # Get the Open column
+        close_column = Features.Close.cols()[0]  # Get the Close column
+
+        # Calculate the percentage change from Open to Close
+        change = (df[close_column] - df[open_column]) / df[open_column]
         return change + 1
 
 
@@ -280,7 +330,7 @@ class FeatureMeta(type):
 
 
 class Features(metaclass=FeatureMeta):
-    feature_list: dict[str, BaseFeature] = {}
+    feature_list: dict[str, BaseFeature] = {"Increased": Increased()}
     base_features: dict[str, BaseFeature] = {
         "Open": Open(),
         "High": High(),
@@ -302,16 +352,30 @@ class Features(metaclass=FeatureMeta):
         cls.feature_list[name] = feature
 
     @staticmethod
+    def flatten_stocklist(stocks: list[str]) -> list[str]:
+        flattened_list = []
+
+        for stock in stocks:
+            if ".csv" in stock:
+                with open(stock, "r") as f:
+                    for line in f:
+                        for item in line.split(","):
+                            flattened_list.append(item.strip())
+            else:
+                flattened_list.append(stock)
+        return flattened_list
+
+    @staticmethod
     def propagate_attrs(orig_df, new_df):
         new_df.attrs = orig_df.attrs.copy()
         return new_df
 
     @staticmethod
     def get_raw_stock(
-            name: str,
-            period: str = None,
-            start_date: datetime = None,
-            end_date: datetime = None,
+        name: str,
+        period: str = None,
+        start_date: datetime = None,
+        end_date: datetime = None,
     ) -> pd.DataFrame:
         ticker = yf.Ticker(name)
         historical_data = ticker.history(start=start_date, end=end_date, period=period)
@@ -324,27 +388,97 @@ class Features(metaclass=FeatureMeta):
 
         return historical_data
 
-    def get_stocks_parse(self, name: str) -> pd.DataFrame:
-        # Split the name into stock and brackets
+    @staticmethod
+    def get_batch_raw_stocks(
+        stocks: list[tuple[str, str, datetime, datetime]],
+    ) -> dict[str, pd.DataFrame]:
+        """Download data for multiple tickers in a single call, and return a dict of dataframes.
+
+        Args:
+            stocks (list[str, str, datetime, datetime]): List of tuples (ticker, period, start_date, end_date)
+        Returns:
+            dict[str, pd.DataFrame]: Dictionary of tickers to dataframes
+
+        """
+        by_date_range = {}
+        for stock_info in stocks:
+            name = stock_info[0]
+            period = stock_info[1] if len(stock_info) > 1 else None
+            start_date = stock_info[2] if len(stock_info) > 2 else None
+            end_date = stock_info[3] if len(stock_info) > 3 else None
+
+            key = (period, start_date, end_date)
+            if key not in by_date_range:
+                by_date_range[key] = []
+            by_date_range[key].append(name)
+
+        # Fetch each group with a single call
+        result = {}
+        for (period, start_date, end_date), tickers in by_date_range.items():
+            # Join tickers with space as required by yfinance
+            ticker_str = " ".join(tickers)
+
+            # Download data for this batch
+            data = yf.download(
+                tickers=ticker_str,
+                period=period,
+                start=start_date,
+                end=end_date,
+                group_by="ticker",
+            )
+
+            # Handle single ticker case differently
+            if len(tickers) == 1:
+                ticker = tickers[0]
+                stock_data = data.copy()
+                if not stock_data.empty:
+                    stock_data.index = stock_data.index.tz_localize(None).normalize()
+                    stock_data.attrs["last_date"] = stock_data.index[-1]
+                    result[ticker] = stock_data
+            else:
+                # Process results for multiple tickers
+                for ticker in tickers:
+                    if ticker in data.columns.levels[0]:
+                        stock_data = data[ticker].copy()
+                        if not stock_data.empty:
+                            stock_data.index = stock_data.index.tz_localize(
+                                None
+                            ).normalize()
+                            stock_data.attrs["last_date"] = stock_data.index[-1]
+                            result[ticker] = stock_data
+
+        return result
+
+    @staticmethod
+    def parse_name(name: str):
+        """
+        Parses the input string for stock, start_date, end_date, and period.
+        Returns a tuple: (stock, start_date, end_date, period).
+        """
+        stock = name
+        start_date = None
+        end_date = None
+        period = None
         if ":" in name:
-            stock, brackets = name.split(":", maxsplit=1)
-            if "-" in brackets:
-                if "," in brackets:
-                    start_date_str, end_date_str = brackets.split(",")
+            stock, info = name.split(":", maxsplit=1)
+            if "-" in info:
+                if "," in info:
+                    start_date_str, end_date_str = info.split(",", maxsplit=1)
                     start_date = datetime.strptime(start_date_str, "%m-%d-%Y")
                     end_date = datetime.strptime(end_date_str, "%m-%d-%Y")
-                    original_df = self.get_stocks(stock, start_date=start_date, end_date=end_date)
                 else:
-                    start_date = datetime.strptime(brackets, "%m-%d-%Y")
-                    original_df = self.get_stocks(stock, start_date=start_date)
+                    start_date = datetime.strptime(info, "%m-%d-%Y")
             else:
-                original_df = self.get_stocks(stock, period=brackets)
-        else:
-            original_df = self.get_stocks(name)
+                period = info
+        return stock, start_date, end_date, period
 
-        # Propagate the attrs metadata
-        result_df = self.propagate_attrs(original_df, original_df)
-        return result_df
+    def get_stocks_parse(self, name: str) -> pd.DataFrame:
+        stock, start_date, end_date, period = self.parse_name(name)
+        original_df = self.get_stocks(
+            stock, period=period, start_date=start_date, end_date=end_date
+        )
+
+        return original_df
 
     @classmethod
     def list_added_cols(cls):
@@ -408,31 +542,38 @@ class Features(metaclass=FeatureMeta):
         df.dropna(inplace=True)
 
     def get_stocks(
-            self,
-            name: str,
-            period: str = None,
-            start_date: datetime = None,
-            end_date: datetime = None,
+        self,
+        name: str,
+        period: str = None,
+        start_date: datetime = None,
+        end_date: datetime = None,
+        raw_stocks: DataFrame = None,
     ) -> pd.DataFrame:
         """
         Gets the stock data from yfinance and calculates each feature
+        :param raw_stocks: Allows you to convert raw stock data into parsed model specific format
         :param name: Name of stock
         :param period: Period of how much data to take
         :param start_date: starting date of what data to take
         :param end_date: Ending date of what data to take
         :return: Dataframe with each main feature requested and each feature requested
         """
-        df = self.get_raw_stock(name, period, start_date, end_date)
-        # Print sample of DataFrame before dropping NaNs
-        print("10 rows of DataFrame before dropping NaNs:")
-        pd.set_option("display.max_columns", None)
-        print(df.tail(10))
+        if raw_stocks is not None:
+            df = raw_stocks
+        else:
+            df = self.get_raw_stock(name, period, start_date, end_date)
+
+        # Debug
+        # print("10 rows of DataFrame before dropping NaNs:")
+        # pd.set_option("display.max_columns", None)
+        # print(df.tail(10))
 
         feat_data: dict[BaseFeature, pd.DataFrame] = {}
         for feature in self.feat_list():
             if feature not in self.base_features.values():
                 feat_df = feature.calculate(df.copy())
             else:
+                # print(f"DF cols: {df.columns} vs requested cols: {feature.cols()}")
                 feat_df = df[feature.cols()].copy()
 
             feat_data[feature] = feat_df
@@ -440,27 +581,24 @@ class Features(metaclass=FeatureMeta):
             if feature is self.predict_on:
                 for col in feature.columns:
                     prev_col = f"prev_{col}"
-                    feat_df.loc[:, prev_col] = feat_df[col].shift(-1)
+                    feat_df.loc[:, prev_col] = feat_df[col].shift(1)
                     true_col = f"true_{col}"
                     feat_df.rename(columns={col: true_col}, inplace=True)
             elif feature.is_sensitive:
                 for col in feature.columns:
                     prev_col = f"prev_{col}"
-                    feat_df.loc[:, prev_col] = feat_df[col].shift(-1)
+                    feat_df.loc[:, prev_col] = feat_df[col].shift(1)
                     feat_df.drop(columns=[col], inplace=True)
 
         # Concatenate feature data
         df = pd.concat(feat_data.values(), axis=1)
-
-        # Propagate attrs to the new DataFrame
-        df = self.propagate_attrs(self.get_raw_stock(name, period, start_date, end_date), df)
 
         df = df[list(self.list_cols(with_true=True, prev_cols=True))]
 
         orig_len = len(df)
         self.drop_na(df)
 
-        print(f"Dropped {orig_len - len(df)} rows out of {orig_len} rows")
+        # print(f"Dropped {orig_len - len(df)} rows out of {orig_len} rows")
 
         return df
 
@@ -477,7 +615,7 @@ class Features(metaclass=FeatureMeta):
         filt_data = data[self.list_cols(prev_cols=True)]
 
         # remove pred_val_col
-        data = data.drop([pred_val_col], axis=1)
+        data.drop([pred_val_col], axis=1)
 
         # Calculate buy days based on the actual features and predicted values
         buy_signals_list = self.predict_on.calcBuyDays(filt_data, predicted_values)
@@ -508,7 +646,7 @@ class Features(metaclass=FeatureMeta):
 
 def import_children(directory="Features"):
     models_dir = os.path.join(os.path.dirname(__file__), directory)
-    
+
     for filename in os.listdir(models_dir):
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name = filename[:-3]
