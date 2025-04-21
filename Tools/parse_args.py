@@ -39,21 +39,22 @@ class Parse_Args:
         help="Overwrites (if exists) else trains pre-existing model.",
     )
 
-    cache = click.option(
-        "-c",
-        "--cache",
-        type=str,
-        default="cache",
-        help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
-    )
+    # May create a helper in the future, run_all.py has inbuilt caching
+    # cache = click.option(
+    #     "-c",
+    #     "--cache",
+    #     type=str,
+    #     default="cache",
+    #     help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
+    # )
 
-    load = click.option(
-        "-l",
-        "--load",
-        type=str,
-        default="cache",
-        help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
-    )
+    # load = click.option(
+    #     "-l",
+    #     "--load",
+    #     type=str,
+    #     default="cache",
+    #     help="Creates a cache file for each stock in provided directory, add the rows that don't already exist, while adding missing data. Can be used with the -s or --stocks option as a file path.",
+    # )
 
     @staticmethod
     def stocks(default=None, multiple=True):
@@ -67,22 +68,11 @@ class Parse_Args:
             type=str,
             default=default,
             required=req,
-            help="""\bSelect stocks for use. Also see --cache and --load options for saving and loading stock data.\n
-    Stock options:
-        - stock stock               Example: `AAPL`, `GOOGL`
-        - stock.market              Example: `AAPL.NASDAQ`, `GOOGL.NYSE`
-        - stock.market:period       Example: `AAPL:1mo`, `GOOGL.NYSE:ytd`
-        - stock.market:start.stop   Example: `AAPL:01-01-2020.12-31-2023`
-        - stock.market:start        Example: `AAPL:01-01-2020`
-        - File Path to CSV          Example: `/path/to/stock_list.csv`
-        
-    Period options:
-        - `1d` (1 day)
-        - `1mo` (1 month)
-        - `1y` (1 year)
-        - `ytd` (year-to-date)
-        - `max` (maximum available data)
-        """,
+            help="Select stocks for use."
+            " Stock options: stock (e.g. AAPL), stock.market (e.g. AAPL.NASDAQ),"
+            " stock.market:period (e.g. AAPL:1mo), stock.market:start.stop (e.g. AAPL:01-01-2020.12-31-2023),"
+            " stock.market:start (e.g. AAPL:01-01-2020), or file path to CSV."
+            " Period options: 1d (1 day), 1mo (1 month), 1y (1 year), ytd (year-to-date), max (maximum available data).",
         )
 
     seed = click.option(
