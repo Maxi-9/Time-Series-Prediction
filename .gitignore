@@ -28,4 +28,5 @@ checkpoints
 !/checkpoints/
 !/lightning_logs/*
 
-metrics.csv
+log/*.csv
+Models/*.spm
