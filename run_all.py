@@ -91,7 +91,7 @@ def log_close_fill(
 
         for idx in df[missing].index:
             row = df.loc[idx]
-            row_date = row["DateTime"].date()
+            row_date = row["Date"].date()
             if row_date == today:
                 continue
             ticker = row["Stock"]
