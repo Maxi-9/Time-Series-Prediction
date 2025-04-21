@@ -3,6 +3,12 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+---
+
+> **⚠️ Financial Disclaimer**
+>
+> This project is for educational and research purposes only. It does **not** constitute financial advice, investment advice, or a recommendation to buy or sell any securities. Use of this software is at your own risk. Always consult a qualified financial advisor before making investment decisions. The author and contributors are not responsible for any financial losses or damages resulting from the use of this code.
+
 ----
 
 <summary>Table of Contents</summary>
