@@ -5,7 +5,6 @@ import os
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, date, timedelta
-from typing import Optional
 
 import pandas as pd
 import yfinance as yf
@@ -33,44 +32,7 @@ def build_log_path(base_log, model_type):
     return os.path.join(base_dir, filename)
 
 
-def _load_cache() -> dict[str, float]:
-    if os.path.exists(CACHE_PATH):
-        try:
-            with open(CACHE_PATH, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            pass
-    return {}
-
-
-def _save_cache(cache: dict[str, float]):
-    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-    with open(CACHE_PATH, "w") as f:
-        json.dump(cache, f, indent=2)
-
-
-def cached_stock_date(ticker: str, dt: datetime) -> float:
-    cache = _load_cache()
-    date_str = dt.strftime("%Y-%m-%d")
-    key = f"{ticker}_{date_str}"
-    if key in cache:
-        return cache[key]
-
-    start = date_str
-    end = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
-    hist = yf.Ticker(ticker).history(start=start, end=end)
-    if hist.empty:
-        raise ValueError(f"No data for {ticker} on {date_str}")
-    close_price = float(hist["Close"].iloc[0])
-
-    cache[key] = close_price
-    _save_cache(cache)
-    return close_price
-
-
-def log_close_fill(
-    stock: Optional[tuple[str, pd.DataFrame]] = None, log_dir: str = "log/"
-):
+def log_close_fill(raw_cache: dict[str, pd.DataFrame], log_dir: str = "log/"):
     today = date.today()
     for fname in os.listdir(log_dir):
         if not fname.endswith(".csv"):
@@ -82,9 +44,6 @@ def log_close_fill(
         missing = df["Close_Price"].isna() | (
             df["Close_Price"].astype(str).str.strip() == ""
         )
-        if stock is not None:
-            ticker, _ = stock
-            missing &= df["Stock"] == ticker
 
         if not missing.any():
             continue
@@ -95,14 +54,19 @@ def log_close_fill(
             if row_date == today:
                 continue
             ticker = row["Stock"]
-            try:
-                close_val = cached_stock_date(
-                    ticker, datetime.combine(row_date, datetime.min.time())
+            # Use raw_cache for historical close data
+            close_val = None
+            if ticker in raw_cache:
+                ticker_df = raw_cache[ticker]
+                # Find the close value for the correct date
+                match = ticker_df[ticker_df.index.date == row_date]
+                if not match.empty and "Close" in match.columns:
+                    close_val = match["Close"].iloc[0]
+            if close_val is None:
+                print(
+                    f"  ⚠️  Could not fetch close for {ticker} on {row_date} from cache."
                 )
-            except Exception as e:
-                print(f"  ⚠️  Could not fetch close for {ticker} on {row_date}: {e}")
                 continue
-
             df.at[idx, "Close_Price"] = close_val
             print(
                 f"[{fname}] Filled Close_Price for {ticker} on {row_date}: {close_val}"
@@ -188,10 +152,10 @@ def main(filename):
             )
         print("No data to process, exiting...")
         return
-    else:
-        print(
-            f"Processing {len(raw_cache)} stocks, {stock_count - len(raw_cache)} were dropped..."
-        )
+
+    print(
+        f"Processing {len(raw_cache)} stocks, {stock_count - len(raw_cache)} were dropped..."
+    )
 
     # Build the list of work tasks
     tasks = []
@@ -220,16 +184,20 @@ def main(filename):
             print(f"Processed {log_csv}")
             rows_by_csv[log_csv].append(row)
 
+    print(f"Finished Processing at {datetime.now()}")
+
     # Write each CSV once, in a batch
     for log_csv, rows in rows_by_csv.items():
         os.makedirs(os.path.dirname(log_csv), exist_ok=True)
         df_rows = pd.DataFrame(rows)
         mode = "a" if os.path.exists(log_csv) else "w"
         df_rows.to_csv(log_csv, mode=mode, header=(mode == "w"), index=False)
-        print(f"Wrote {len(rows)} rows to {log_csv}")
+        print(f"{'Wrote' if mode == 'w' else 'Appended'} {len(rows)} rows to {log_csv}")
+
+    print("Finished Logging, now checking for missing data...")
 
     # Finally, fill in any missing historical Close_Price
-    log_close_fill()
+    log_close_fill(raw_cache)
 
 
 if __name__ == "__main__":
