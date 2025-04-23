@@ -37,7 +37,7 @@ Stock_Prediction is a modular, extensible machine learning framework for stock m
 
 - **Author:** Max Schwickert
 - **Capstone project (high school)**
-- ⚠️ **Early stage of development! Expect bugs and issues.** ⚠️
+- ⚠️ **Project is for educational and research purposes only** ⚠️
 
 ## Features
 - **Highly Modular:** Easily swap models, add features, or extend code.
