@@ -32,14 +32,26 @@ def build_log_path(base_log, model_type):
     return os.path.join(base_dir, filename)
 
 
+def extract_scalar(val):
+    if isinstance(val, pd.Series):
+        return val.item()
+    return val
+
+
 def log_close_fill(raw_cache: dict[str, pd.DataFrame], log_dir: str = "log/"):
+
     today = date.today()
     for fname in os.listdir(log_dir):
         if not fname.endswith(".csv"):
             continue
 
         path = os.path.join(log_dir, fname)
-        df = pd.read_csv(path, parse_dates=["Date"])
+
+        try:
+            df = pd.read_csv(path, parse_dates=["Date"])
+        except Exception as e:
+            print(f"Error reading {path}: {e}")
+            continue
 
         missing = df["Close_Price"].isna() | (
             df["Close_Price"].astype(str).str.strip() == ""
@@ -54,25 +66,52 @@ def log_close_fill(raw_cache: dict[str, pd.DataFrame], log_dir: str = "log/"):
             if row_date == today:
                 continue
             ticker = row["Stock"]
-            # Use raw_cache for historical close data
             close_val = None
-            if ticker in raw_cache:
-                ticker_df = raw_cache[ticker]
-                # Find the close value for the correct date
-                match = ticker_df[ticker_df.index.date == row_date]
-                if not match.empty and "Close" in match.columns:
-                    close_val = match["Close"].iloc[0]
-            if close_val is None:
+            # Try cache lookup
+            try:
+                if ticker in raw_cache:
+                    ticker_df = raw_cache[ticker]
+                    match = ticker_df[ticker_df.index.date == row_date]
+                    if not match.empty and "Close" in match.columns:
+                        close_val = match["Close"].iloc[0]
+                        close_val = extract_scalar(close_val)
+            except Exception as e:
+                print(f"Error accessing cache for {ticker} on {row_date}: {e}")
+
+            if close_val is None or (
+                isinstance(close_val, float) and pd.isna(close_val)
+            ):
+                try:
+                    yf_df = yf.download(
+                        ticker,
+                        start=row_date,
+                        end=row_date + timedelta(days=1),
+                        progress=False,
+                    )
+                    if not yf_df.empty and "Close" in yf_df.columns:
+                        close_val = yf_df["Close"].iloc[0]
+                        close_val = extract_scalar(close_val)
+                        print(
+                            f"[{fname}] Fetched Close_Price from yfinance for {ticker} on {row_date}: {close_val}"
+                        )
+                except Exception as e:
+                    print(f"  ⚠️  yfinance error for {ticker} on {row_date}: {e}")
+
+            if close_val is None or (
+                isinstance(close_val, float) and pd.isna(close_val)
+            ):
                 print(
-                    f"  ⚠️  Could not fetch close for {ticker} on {row_date} from cache."
+                    f"  ⚠️  Could not fetch close for {ticker} on {row_date} from cache or yfinance."
                 )
                 continue
             df.at[idx, "Close_Price"] = close_val
             print(
                 f"[{fname}] Filled Close_Price for {ticker} on {row_date}: {close_val}"
             )
-
-        df.to_csv(path, index=False)
+        try:
+            df.to_csv(path, index=False)
+        except Exception as e:
+            print(f"Error writing to {path}: {e}")
 
 
 def process_one(task):
@@ -165,7 +204,12 @@ def main(filename):
         if model is None:
             print(f"⚠️  Could not load model {model_path}, skipping.")
             continue
+
         model_type = model.model_type
+
+        if cfg.get("seed") is None:
+            model.seed = None
+
         log_dir = m.get("log_dir", "log/")
         for raw_name, raw_df in raw_cache.items():
             tasks.append((raw_name, raw_df, model_path, model_type, log_dir, now))
