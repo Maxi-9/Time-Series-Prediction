@@ -158,9 +158,6 @@ class TransformerModel(Commons):
             callbacks=[self.checkpoint_callback],
         )
 
-        if not self.seed:
-            self.seed = int(time.time() * 1000) % 2**32
-
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -168,7 +165,9 @@ class TransformerModel(Commons):
             num_workers=7,
             persistent_workers=True,
             worker_init_fn=self.worker_init_function,
-            generator=torch.Generator().manual_seed(self.seed),
+            generator=torch.Generator().manual_seed(
+                self.seed if self.seed is not None else int(time.time() * 1000) % 2**32
+            ),
         )
 
         try:
